@@ -1,0 +1,119 @@
+# Replit Development Request: Taskflow - A Modern Goal-Oriented Daily Planner Web App
+
+## Project Overview
+I need help building "Taskflow," a Sunsama-inspired digital daily planner that helps users manage goals, tasks, calendars, and communications in one unified interface. The app is primarily a goal management tool that translates high-level intentions into daily actions. The app should be a Progressive Web App (PWA) with its own backend and database, featuring a modern, minimal design with both light and dark modes.
+
+## Core Requirements
+
+### Technical Stack
+- **Frontend**: React with TypeScript, styled with Tailwind CSS
+- **Backend**: Node.js with Express or Next.js API routes
+- **Database**: MongoDB for flexible document storage
+- **Authentication**: Firebase Auth or NextAuth.js
+- **State Management**: React Query for server state, Context API or Redux for client state
+- **Hosting**: Vercel or Netlify for frontend, backend deployable to Heroku or similar
+
+### Key Functionality
+1. **User Authentication**:
+   - Email/password login
+   - OAuth with Google only
+
+2. **Calendar Integration** (HIGHEST PRIORITY):
+   - Deep bi-directional sync with Google Calendar, Outlook, and iCloud
+   - Visual timeline representation of the day/week
+   - Ability to block time for tasks directly in the calendar
+   - Automatic task scheduling based on calendar availability
+   - Calendar event creation from tasks
+   - Multiple calendar support with custom color coding
+   - Meeting preparation reminders
+   - Buffer time settings between calendar events
+   - Conflict detection and resolution
+
+3. **Goal Management System**:
+   - Hierarchical goal structure (long-term, monthly, weekly, daily)
+   - Goal progress tracking and visualization
+   - Connect tasks to specific goals to measure progress
+   - Weekly goal review process with insights
+   - Goal templates for recurring objectives
+   - Time budgeting by goal category
+   - Performance metrics against goal targets
+
+4. **Integration Framework**:
+   - Modular system to connect with external APIs
+   - Todoist integration only for external task management
+   - Google Calendar for calendar management
+   - Gmail integration
+   - Webhooks system for real-time updates
+   - API rate limiting and backoff strategies
+   - Conflict resolution for synced items
+
+5. **Core Features**:
+   - Unified daily view dashboard
+   - Task management with duration estimates
+   - Kanban board view for daily tasks organization
+   - Custom task views (by priority, deadline, goal, etc.)
+   - Daily planning workflow
+   - Focus mode
+   - Drag-and-drop interface throughout the app
+
+4. **User Experience**:
+   - Clean, minimal interface with abundant white space
+   - Smooth animations for transitions
+   - Fully responsive design that works on mobile
+   - Dark/light mode toggle with system preference detection
+   - Keyboard shortcuts for common actions
+
+### Data Model (Simplified)
+- **Users**: Authentication details, preferences, connected accounts
+- **Goals**: Title, description, category, timeframe, progress metrics, deadline, priority, parent/child relationships
+- **Tasks**: Title, description, estimated duration, actual duration, status, source, external ID, associated goal
+- **TimeBlocks**: Scheduled task time, linked calendar events, buffer settings
+- **DailyPlans**: Collection of tasks, time blocks, and notes for a specific day
+- **WeeklyPlans**: High-level goals for the week, time budgets, priority areas
+- **Integrations**: API credentials, sync status, user mappings
+- **KanbanBoards**: Custom board configurations, column definitions, card mappings
+
+## Implementation Phases
+
+### Phase 1 - Core Experience (MVP)
+- Auth system
+- Goal management framework
+- Comprehensive calendar integration (highest priority)
+- Daily task view with Kanban board option
+- Manual task creation and management
+- Goal-to-task relationship mapping
+- Light/dark mode
+- Responsive layout
+
+### Phase 2 - Integrations & Planning
+- Todoist integration for external tasks
+- Gmail integration
+- Two-way sync with external tools
+- Daily and weekly planning workflows
+- Goal progress tracking
+- Time budgeting features
+
+### Phase 3 - Advanced Features
+- Focus mode
+- Advanced analytics dashboard
+- Goal achievement forecasting
+- Offline support (PWA)
+- Additional integrations
+- Team goal sharing
+- Advanced Kanban customization
+
+## Design Guidelines
+- **Visual Style**: Clean, minimal, with subtle shadows and rounded corners
+- **Color Palette**: Neutral base with accent colors for categorization
+- **Typography**: Sans-serif system fonts for optimal performance
+- **Layout**: Card-based components, with clear visual hierarchy
+- **Motion**: Subtle, purposeful animations for state changes
+
+## Additional Notes
+- Prioritize a fast, responsive experience even with multiple integrations
+- Design the system for extensibility to add more integrations later
+- Implement proper error handling and sync conflict resolution
+- Ensure data privacy and security, especially for email and calendar data
+- Consider implementing a local-first approach with cloud sync for reliability
+
+Let me know if you need any clarification or have suggestions to improve this project plan. I'm open to technical recommendations that might make implementation more efficient or effective.
