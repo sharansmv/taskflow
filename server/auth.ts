@@ -1,3 +1,9 @@
+/**
+ * Authentication Module
+ * 
+ * This file configures Passport.js for user authentication and session management.
+ * It implements secure password hashing, login/logout routes, and session handling.
+ */
 import passport from "passport";
 import { Strategy as LocalStrategy } from "passport-local";
 import { Express } from "express";
@@ -5,7 +11,7 @@ import session from "express-session";
 import { scrypt, randomBytes, timingSafeEqual } from "crypto";
 import { promisify } from "util";
 import { storage } from "./storage";
-import { User as SelectUser } from "@shared/schema";
+import { IUser } from "@shared/models";
 
 /**
  * Extend Express.User interface to include our application's User type
@@ -13,7 +19,7 @@ import { User as SelectUser } from "@shared/schema";
  */
 declare global {
   namespace Express {
-    interface User extends SelectUser {}
+    interface User extends IUser {}
   }
 }
 
@@ -63,10 +69,14 @@ async function comparePasswords(supplied: string, stored: string) {
 export function setupAuth(app: Express) {
   // Configure session settings
   const sessionSettings: session.SessionOptions = {
-    secret: process.env.SESSION_SECRET!,
+    secret: process.env.SESSION_SECRET || 'taskflow-secret-key',
     resave: false,
     saveUninitialized: false,
     store: storage.sessionStore, // Use storage implementation's session store
+    cookie: {
+      secure: process.env.NODE_ENV === 'production',
+      maxAge: 1000 * 60 * 60 * 24 // 1 day
+    }
   };
 
   // Trust first proxy for session cookies in production
@@ -105,13 +115,16 @@ export function setupAuth(app: Express) {
    * Define how to serialize user to the session
    * Only store the user ID in the session for security
    */
-  passport.serializeUser((user, done) => done(null, user.id));
+  passport.serializeUser((user, done) => {
+    // With MongoDB, we use the string _id instead of a number id
+    done(null, user._id.toString());
+  });
   
   /**
    * Define how to deserialize user from the session
    * Look up the user by ID when needed
    */
-  passport.deserializeUser(async (id: number, done) => {
+  passport.deserializeUser(async (id: string, done) => {
     try {
       const user = await storage.getUser(id);
       done(null, user);
@@ -132,6 +145,12 @@ export function setupAuth(app: Express) {
         return res.status(400).send("Username already exists");
       }
 
+      // Check if email already exists
+      const existingEmail = await storage.getUserByEmail(req.body.email);
+      if (existingEmail) {
+        return res.status(400).send("Email already exists");
+      }
+
       // Create new user with hashed password
       const user = await storage.createUser({
         ...req.body,
@@ -141,9 +160,22 @@ export function setupAuth(app: Express) {
       // Log in the newly created user
       req.login(user, (err) => {
         if (err) return next(err);
-        res.status(201).json(user);
+        
+        // Return the user without sensitive information
+        const safeUser = {
+          _id: user._id,
+          username: user.username,
+          email: user.email,
+          fullName: user.fullName,
+          profilePicture: user.profilePicture,
+          createdAt: user.createdAt
+        };
+        
+        res.status(201).json(safeUser);
       });
     } catch (err) {
+      console.error('Registration error:', err);
+      res.status(500).send("Error during registration");
       next(err);
     }
   });
@@ -153,8 +185,18 @@ export function setupAuth(app: Express) {
    * Uses passport.authenticate middleware to validate credentials
    */
   app.post("/api/login", passport.authenticate("local"), (req, res) => {
-    // If authentication is successful, return the user data
-    res.status(200).json(req.user);
+    // If authentication is successful, return the user data without sensitive info
+    const user = req.user as IUser;
+    const safeUser = {
+      _id: user._id,
+      username: user.username,
+      email: user.email,
+      fullName: user.fullName,
+      profilePicture: user.profilePicture,
+      createdAt: user.createdAt
+    };
+    
+    res.status(200).json(safeUser);
   });
 
   /**
@@ -174,6 +216,18 @@ export function setupAuth(app: Express) {
    */
   app.get("/api/user", (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
-    res.json(req.user);
+    
+    // Return the user without sensitive information
+    const user = req.user as IUser;
+    const safeUser = {
+      _id: user._id,
+      username: user.username,
+      email: user.email,
+      fullName: user.fullName,
+      profilePicture: user.profilePicture,
+      createdAt: user.createdAt
+    };
+    
+    res.json(safeUser);
   });
 }

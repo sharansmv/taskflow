@@ -1,309 +1,636 @@
-import { users, tasks, goals, timeBlocks, dailyPlans, weeklyPlans, integrations } from "@shared/schema";
-import type { User, InsertUser, Task, InsertTask, Goal, InsertGoal, TimeBlock, InsertTimeBlock, DailyPlan, InsertDailyPlan, Integration, InsertIntegration } from "@shared/schema";
+/**
+ * Storage Implementation for MongoDB
+ * 
+ * This file implements the storage interface using MongoDB and Mongoose models
+ * to provide data persistence for the Taskflow application.
+ */
 import session from "express-session";
-import createMemoryStore from "memorystore";
+import { Types } from "mongoose";
+import MongoStore from "connect-mongo";
+import connectMongo from "connect-mongodb-session";
 
-const MemoryStore = createMemoryStore(session);
+// Import Mongoose models and types
+import {
+  User, InsertUser, Goal, InsertGoal, Task, InsertTask,
+  TimeBlock, InsertTimeBlock, DailyPlan, InsertDailyPlan,
+  Integration, InsertIntegration, IUser, IGoal, ITask,
+  ITimeBlock, IDailyPlan, IIntegration
+} from "@shared/models";
 
+// MongoDB session store
+const MongoDBStore = connectMongo(session);
+
+/**
+ * Storage interface defining all database operations
+ * This interface remains consistent while the implementation can change
+ */
 export interface IStorage {
   // User operations
-  getUser(id: number): Promise<User | undefined>;
-  getUserByUsername(username: string): Promise<User | undefined>;
-  getUserByEmail(email: string): Promise<User | undefined>;
-  getUserByGoogleId(googleId: string): Promise<User | undefined>;
-  createUser(user: InsertUser): Promise<User>;
+  getUser(id: string): Promise<IUser | undefined>;
+  getUserByUsername(username: string): Promise<IUser | undefined>;
+  getUserByEmail(email: string): Promise<IUser | undefined>;
+  getUserByGoogleId(googleId: string): Promise<IUser | undefined>;
+  createUser(user: InsertUser): Promise<IUser>;
   
   // Task operations
-  getTask(id: number): Promise<Task | undefined>;
-  getTasksByUser(userId: number): Promise<Task[]>;
-  getTasksByStatus(userId: number, status: string): Promise<Task[]>;
-  createTask(task: InsertTask): Promise<Task>;
-  updateTask(id: number, task: Partial<Task>): Promise<Task | undefined>;
-  deleteTask(id: number): Promise<boolean>;
+  getTask(id: string): Promise<ITask | undefined>;
+  getTasksByUser(userId: string): Promise<ITask[]>;
+  getTasksByStatus(userId: string, status: string): Promise<ITask[]>;
+  createTask(task: InsertTask): Promise<ITask>;
+  updateTask(id: string, task: Partial<ITask>): Promise<ITask | undefined>;
+  deleteTask(id: string): Promise<boolean>;
   
   // Goal operations
-  getGoal(id: number): Promise<Goal | undefined>;
-  getGoalsByUser(userId: number): Promise<Goal[]>;
-  getGoalsByTimeframe(userId: number, timeframe: string): Promise<Goal[]>;
-  createGoal(goal: InsertGoal): Promise<Goal>;
-  updateGoal(id: number, goal: Partial<Goal>): Promise<Goal | undefined>;
-  deleteGoal(id: number): Promise<boolean>;
+  getGoal(id: string): Promise<IGoal | undefined>;
+  getGoalsByUser(userId: string): Promise<IGoal[]>;
+  getGoalsByTimeframe(userId: string, timeframe: string): Promise<IGoal[]>;
+  createGoal(goal: InsertGoal): Promise<IGoal>;
+  updateGoal(id: string, goal: Partial<IGoal>): Promise<IGoal | undefined>;
+  deleteGoal(id: string): Promise<boolean>;
   
   // TimeBlock operations
-  getTimeBlock(id: number): Promise<TimeBlock | undefined>;
-  getTimeBlocksByUser(userId: number, startDate: Date, endDate: Date): Promise<TimeBlock[]>;
-  createTimeBlock(timeBlock: InsertTimeBlock): Promise<TimeBlock>;
-  updateTimeBlock(id: number, timeBlock: Partial<TimeBlock>): Promise<TimeBlock | undefined>;
-  deleteTimeBlock(id: number): Promise<boolean>;
+  getTimeBlock(id: string): Promise<ITimeBlock | undefined>;
+  getTimeBlocksByUser(userId: string, startDate: Date, endDate: Date): Promise<ITimeBlock[]>;
+  createTimeBlock(timeBlock: InsertTimeBlock): Promise<ITimeBlock>;
+  updateTimeBlock(id: string, timeBlock: Partial<ITimeBlock>): Promise<ITimeBlock | undefined>;
+  deleteTimeBlock(id: string): Promise<boolean>;
   
   // DailyPlan operations
-  getDailyPlan(userId: number, date: Date): Promise<DailyPlan | undefined>;
-  createDailyPlan(dailyPlan: InsertDailyPlan): Promise<DailyPlan>;
-  updateDailyPlan(id: number, dailyPlan: Partial<DailyPlan>): Promise<DailyPlan | undefined>;
+  getDailyPlan(userId: string, date: Date): Promise<IDailyPlan | undefined>;
+  createDailyPlan(dailyPlan: InsertDailyPlan): Promise<IDailyPlan>;
+  updateDailyPlan(id: string, dailyPlan: Partial<IDailyPlan>): Promise<IDailyPlan | undefined>;
   
   // Integration operations
-  getIntegration(userId: number, type: string): Promise<Integration | undefined>;
-  createIntegration(integration: InsertIntegration): Promise<Integration>;
-  updateIntegration(id: number, integration: Partial<Integration>): Promise<Integration | undefined>;
-  deleteIntegration(id: number): Promise<boolean>;
+  getIntegration(userId: string, type: string): Promise<IIntegration | undefined>;
+  createIntegration(integration: InsertIntegration): Promise<IIntegration>;
+  updateIntegration(id: string, integration: Partial<IIntegration>): Promise<IIntegration | undefined>;
+  deleteIntegration(id: string): Promise<boolean>;
   
   sessionStore: session.SessionStore;
 }
 
-export class MemStorage implements IStorage {
-  private users: Map<number, User>;
-  private tasks: Map<number, Task>;
-  private goals: Map<number, Goal>;
-  private timeBlocks: Map<number, TimeBlock>;
-  private dailyPlans: Map<number, DailyPlan>;
-  private integrations: Map<number, Integration>;
-  
-  private userIdCounter: number;
-  private taskIdCounter: number;
-  private goalIdCounter: number;
-  private timeBlockIdCounter: number;
-  private dailyPlanIdCounter: number;
-  private integrationIdCounter: number;
-  
+/**
+ * MongoDB implementation of the storage interface
+ * Uses Mongoose models to interact with the database
+ */
+export class MongoStorage implements IStorage {
   sessionStore: session.SessionStore;
 
   constructor() {
-    this.users = new Map();
-    this.tasks = new Map();
-    this.goals = new Map();
-    this.timeBlocks = new Map();
-    this.dailyPlans = new Map();
-    this.integrations = new Map();
+    // Create MongoDB session store for Express
+    const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/taskflow';
     
-    this.userIdCounter = 1;
-    this.taskIdCounter = 1;
-    this.goalIdCounter = 1;
-    this.timeBlockIdCounter = 1;
-    this.dailyPlanIdCounter = 1;
-    this.integrationIdCounter = 1;
-    
-    this.sessionStore = new MemoryStore({
-      checkPeriod: 86400000 // One day in ms
+    this.sessionStore = MongoStore.create({
+      mongoUrl: MONGODB_URI,
+      collectionName: 'sessions',
+      ttl: 86400 // 1 day in seconds
     });
   }
 
-  // User methods
-  async getUser(id: number): Promise<User | undefined> {
-    return this.users.get(id);
+  // ==================== User Methods ====================
+  
+  /**
+   * Get a user by their ID
+   * @param id - The MongoDB ObjectId of the user
+   */
+  async getUser(id: string): Promise<IUser | undefined> {
+    try {
+      const user = await User.findById(id);
+      return user || undefined;
+    } catch (error) {
+      console.error('Error getting user by ID:', error);
+      return undefined;
+    }
   }
 
-  async getUserByUsername(username: string): Promise<User | undefined> {
-    return Array.from(this.users.values()).find(
-      (user) => user.username === username
-    );
+  /**
+   * Get a user by their username
+   * @param username - The username to search for
+   */
+  async getUserByUsername(username: string): Promise<IUser | undefined> {
+    try {
+      const user = await User.findOne({ username });
+      return user || undefined;
+    } catch (error) {
+      console.error('Error getting user by username:', error);
+      return undefined;
+    }
   }
 
-  async getUserByEmail(email: string): Promise<User | undefined> {
-    return Array.from(this.users.values()).find(
-      (user) => user.email === email
-    );
+  /**
+   * Get a user by their email address
+   * @param email - The email address to search for
+   */
+  async getUserByEmail(email: string): Promise<IUser | undefined> {
+    try {
+      const user = await User.findOne({ email });
+      return user || undefined;
+    } catch (error) {
+      console.error('Error getting user by email:', error);
+      return undefined;
+    }
   }
 
-  async getUserByGoogleId(googleId: string): Promise<User | undefined> {
-    return Array.from(this.users.values()).find(
-      (user) => user.googleId === googleId
-    );
+  /**
+   * Get a user by their Google ID (for OAuth)
+   * @param googleId - The Google ID to search for
+   */
+  async getUserByGoogleId(googleId: string): Promise<IUser | undefined> {
+    try {
+      const user = await User.findOne({ googleId });
+      return user || undefined;
+    } catch (error) {
+      console.error('Error getting user by Google ID:', error);
+      return undefined;
+    }
   }
 
-  async createUser(insertUser: InsertUser): Promise<User> {
-    const id = this.userIdCounter++;
-    const now = new Date();
-    const user: User = { ...insertUser, id, createdAt: now };
-    this.users.set(id, user);
-    return user;
+  /**
+   * Create a new user in the database
+   * @param userData - The user data to insert
+   */
+  async createUser(userData: InsertUser): Promise<IUser> {
+    try {
+      const user = new User(userData);
+      await user.save();
+      return user;
+    } catch (error) {
+      console.error('Error creating user:', error);
+      throw error;
+    }
   }
 
-  // Task methods
-  async getTask(id: number): Promise<Task | undefined> {
-    return this.tasks.get(id);
+  // ==================== Task Methods ====================
+  
+  /**
+   * Get a task by its ID
+   * @param id - The MongoDB ObjectId of the task
+   */
+  async getTask(id: string): Promise<ITask | undefined> {
+    try {
+      const task = await Task.findById(id);
+      return task || undefined;
+    } catch (error) {
+      console.error('Error getting task by ID:', error);
+      return undefined;
+    }
   }
 
-  async getTasksByUser(userId: number): Promise<Task[]> {
-    return Array.from(this.tasks.values()).filter(
-      (task) => task.userId === userId
-    );
+  /**
+   * Get all tasks for a specific user
+   * @param userId - The user's ID
+   */
+  async getTasksByUser(userId: string): Promise<ITask[]> {
+    try {
+      return await Task.find({ userId: new Types.ObjectId(userId) });
+    } catch (error) {
+      console.error('Error getting tasks by user:', error);
+      return [];
+    }
   }
 
-  async getTasksByStatus(userId: number, status: string): Promise<Task[]> {
-    return Array.from(this.tasks.values()).filter(
-      (task) => task.userId === userId && task.status === status
-    );
+  /**
+   * Get tasks for a specific user filtered by status
+   * @param userId - The user's ID
+   * @param status - The task status to filter by
+   */
+  async getTasksByStatus(userId: string, status: string): Promise<ITask[]> {
+    try {
+      return await Task.find({ 
+        userId: new Types.ObjectId(userId),
+        status 
+      });
+    } catch (error) {
+      console.error('Error getting tasks by status:', error);
+      return [];
+    }
   }
 
-  async createTask(insertTask: InsertTask): Promise<Task> {
-    const id = this.taskIdCounter++;
-    const now = new Date();
-    const task: Task = { 
-      ...insertTask, 
-      id, 
-      createdAt: now,
-      completed: false,
-      actualDuration: null,
-      externalId: null
-    };
-    this.tasks.set(id, task);
-    return task;
+  /**
+   * Create a new task in the database
+   * @param taskData - The task data to insert
+   */
+  async createTask(taskData: InsertTask): Promise<ITask> {
+    try {
+      // Convert string IDs to ObjectIds
+      const task = new Task({
+        ...taskData,
+        userId: new Types.ObjectId(taskData.userId),
+        goalId: taskData.goalId ? new Types.ObjectId(taskData.goalId) : undefined
+      });
+      
+      await task.save();
+      return task;
+    } catch (error) {
+      console.error('Error creating task:', error);
+      throw error;
+    }
   }
 
-  async updateTask(id: number, taskUpdate: Partial<Task>): Promise<Task | undefined> {
-    const task = this.tasks.get(id);
-    if (!task) return undefined;
-    
-    const updatedTask = { ...task, ...taskUpdate };
-    this.tasks.set(id, updatedTask);
-    return updatedTask;
+  /**
+   * Update an existing task
+   * @param id - The task ID to update
+   * @param taskUpdate - The updated task data
+   */
+  async updateTask(id: string, taskUpdate: Partial<ITask>): Promise<ITask | undefined> {
+    try {
+      // Handle potential ObjectId conversions
+      if (taskUpdate.goalId && typeof taskUpdate.goalId === 'string') {
+        taskUpdate.goalId = new Types.ObjectId(taskUpdate.goalId);
+      }
+      
+      const task = await Task.findByIdAndUpdate(
+        id,
+        { $set: taskUpdate },
+        { new: true }
+      );
+      
+      return task || undefined;
+    } catch (error) {
+      console.error('Error updating task:', error);
+      return undefined;
+    }
   }
 
-  async deleteTask(id: number): Promise<boolean> {
-    return this.tasks.delete(id);
+  /**
+   * Delete a task from the database
+   * @param id - The task ID to delete
+   */
+  async deleteTask(id: string): Promise<boolean> {
+    try {
+      const result = await Task.findByIdAndDelete(id);
+      return !!result;
+    } catch (error) {
+      console.error('Error deleting task:', error);
+      return false;
+    }
   }
 
-  // Goal methods
-  async getGoal(id: number): Promise<Goal | undefined> {
-    return this.goals.get(id);
+  // ==================== Goal Methods ====================
+  
+  /**
+   * Get a goal by its ID
+   * @param id - The MongoDB ObjectId of the goal
+   */
+  async getGoal(id: string): Promise<IGoal | undefined> {
+    try {
+      const goal = await Goal.findById(id);
+      return goal || undefined;
+    } catch (error) {
+      console.error('Error getting goal by ID:', error);
+      return undefined;
+    }
   }
 
-  async getGoalsByUser(userId: number): Promise<Goal[]> {
-    return Array.from(this.goals.values()).filter(
-      (goal) => goal.userId === userId
-    );
+  /**
+   * Get all goals for a specific user
+   * @param userId - The user's ID
+   */
+  async getGoalsByUser(userId: string): Promise<IGoal[]> {
+    try {
+      return await Goal.find({ userId: new Types.ObjectId(userId) });
+    } catch (error) {
+      console.error('Error getting goals by user:', error);
+      return [];
+    }
   }
 
-  async getGoalsByTimeframe(userId: number, timeframe: string): Promise<Goal[]> {
-    return Array.from(this.goals.values()).filter(
-      (goal) => goal.userId === userId && goal.timeframe === timeframe
-    );
+  /**
+   * Get goals for a specific user filtered by timeframe
+   * @param userId - The user's ID
+   * @param timeframe - The timeframe to filter by
+   */
+  async getGoalsByTimeframe(userId: string, timeframe: string): Promise<IGoal[]> {
+    try {
+      return await Goal.find({ 
+        userId: new Types.ObjectId(userId),
+        timeframe 
+      });
+    } catch (error) {
+      console.error('Error getting goals by timeframe:', error);
+      return [];
+    }
   }
 
-  async createGoal(insertGoal: InsertGoal): Promise<Goal> {
-    const id = this.goalIdCounter++;
-    const now = new Date();
-    const goal: Goal = { 
-      ...insertGoal, 
-      id, 
-      progress: 0, 
-      completed: false,
-      createdAt: now
-    };
-    this.goals.set(id, goal);
-    return goal;
+  /**
+   * Create a new goal in the database
+   * @param goalData - The goal data to insert
+   */
+  async createGoal(goalData: InsertGoal): Promise<IGoal> {
+    try {
+      // Convert string IDs to ObjectIds
+      const goal = new Goal({
+        ...goalData,
+        userId: new Types.ObjectId(goalData.userId),
+        parentGoalId: goalData.parentGoalId ? new Types.ObjectId(goalData.parentGoalId) : undefined
+      });
+      
+      await goal.save();
+      return goal;
+    } catch (error) {
+      console.error('Error creating goal:', error);
+      throw error;
+    }
   }
 
-  async updateGoal(id: number, goalUpdate: Partial<Goal>): Promise<Goal | undefined> {
-    const goal = this.goals.get(id);
-    if (!goal) return undefined;
-    
-    const updatedGoal = { ...goal, ...goalUpdate };
-    this.goals.set(id, updatedGoal);
-    return updatedGoal;
+  /**
+   * Update an existing goal
+   * @param id - The goal ID to update
+   * @param goalUpdate - The updated goal data
+   */
+  async updateGoal(id: string, goalUpdate: Partial<IGoal>): Promise<IGoal | undefined> {
+    try {
+      // Handle potential ObjectId conversions
+      if (goalUpdate.parentGoalId && typeof goalUpdate.parentGoalId === 'string') {
+        goalUpdate.parentGoalId = new Types.ObjectId(goalUpdate.parentGoalId);
+      }
+      
+      const goal = await Goal.findByIdAndUpdate(
+        id,
+        { $set: goalUpdate },
+        { new: true }
+      );
+      
+      return goal || undefined;
+    } catch (error) {
+      console.error('Error updating goal:', error);
+      return undefined;
+    }
   }
 
-  async deleteGoal(id: number): Promise<boolean> {
-    return this.goals.delete(id);
+  /**
+   * Delete a goal from the database
+   * @param id - The goal ID to delete
+   */
+  async deleteGoal(id: string): Promise<boolean> {
+    try {
+      const result = await Goal.findByIdAndDelete(id);
+      return !!result;
+    } catch (error) {
+      console.error('Error deleting goal:', error);
+      return false;
+    }
   }
 
-  // TimeBlock methods
-  async getTimeBlock(id: number): Promise<TimeBlock | undefined> {
-    return this.timeBlocks.get(id);
+  // ==================== TimeBlock Methods ====================
+  
+  /**
+   * Get a timeblock by its ID
+   * @param id - The MongoDB ObjectId of the timeblock
+   */
+  async getTimeBlock(id: string): Promise<ITimeBlock | undefined> {
+    try {
+      const timeBlock = await TimeBlock.findById(id);
+      return timeBlock || undefined;
+    } catch (error) {
+      console.error('Error getting time block by ID:', error);
+      return undefined;
+    }
   }
 
-  async getTimeBlocksByUser(userId: number, startDate: Date, endDate: Date): Promise<TimeBlock[]> {
-    return Array.from(this.timeBlocks.values()).filter(
-      (block) => block.userId === userId && 
-                 block.startTime >= startDate && 
-                 block.endTime <= endDate
-    );
+  /**
+   * Get timeblocks for a specific user within a date range
+   * @param userId - The user's ID
+   * @param startDate - The start date range
+   * @param endDate - The end date range
+   */
+  async getTimeBlocksByUser(userId: string, startDate: Date, endDate: Date): Promise<ITimeBlock[]> {
+    try {
+      return await TimeBlock.find({ 
+        userId: new Types.ObjectId(userId),
+        startTime: { $gte: startDate },
+        endTime: { $lte: endDate }
+      });
+    } catch (error) {
+      console.error('Error getting time blocks by user and date range:', error);
+      return [];
+    }
   }
 
-  async createTimeBlock(insertTimeBlock: InsertTimeBlock): Promise<TimeBlock> {
-    const id = this.timeBlockIdCounter++;
-    const now = new Date();
-    const timeBlock: TimeBlock = { ...insertTimeBlock, id, createdAt: now };
-    this.timeBlocks.set(id, timeBlock);
-    return timeBlock;
+  /**
+   * Create a new timeblock in the database
+   * @param timeBlockData - The timeblock data to insert
+   */
+  async createTimeBlock(timeBlockData: InsertTimeBlock): Promise<ITimeBlock> {
+    try {
+      // Convert string IDs to ObjectIds
+      const timeBlock = new TimeBlock({
+        ...timeBlockData,
+        userId: new Types.ObjectId(timeBlockData.userId),
+        taskId: timeBlockData.taskId ? new Types.ObjectId(timeBlockData.taskId) : undefined
+      });
+      
+      await timeBlock.save();
+      return timeBlock;
+    } catch (error) {
+      console.error('Error creating time block:', error);
+      throw error;
+    }
   }
 
-  async updateTimeBlock(id: number, timeBlockUpdate: Partial<TimeBlock>): Promise<TimeBlock | undefined> {
-    const timeBlock = this.timeBlocks.get(id);
-    if (!timeBlock) return undefined;
-    
-    const updatedTimeBlock = { ...timeBlock, ...timeBlockUpdate };
-    this.timeBlocks.set(id, updatedTimeBlock);
-    return updatedTimeBlock;
+  /**
+   * Update an existing timeblock
+   * @param id - The timeblock ID to update
+   * @param timeBlockUpdate - The updated timeblock data
+   */
+  async updateTimeBlock(id: string, timeBlockUpdate: Partial<ITimeBlock>): Promise<ITimeBlock | undefined> {
+    try {
+      // Handle potential ObjectId conversions
+      if (timeBlockUpdate.taskId && typeof timeBlockUpdate.taskId === 'string') {
+        timeBlockUpdate.taskId = new Types.ObjectId(timeBlockUpdate.taskId);
+      }
+      
+      const timeBlock = await TimeBlock.findByIdAndUpdate(
+        id,
+        { $set: timeBlockUpdate },
+        { new: true }
+      );
+      
+      return timeBlock || undefined;
+    } catch (error) {
+      console.error('Error updating time block:', error);
+      return undefined;
+    }
   }
 
-  async deleteTimeBlock(id: number): Promise<boolean> {
-    return this.timeBlocks.delete(id);
+  /**
+   * Delete a timeblock from the database
+   * @param id - The timeblock ID to delete
+   */
+  async deleteTimeBlock(id: string): Promise<boolean> {
+    try {
+      const result = await TimeBlock.findByIdAndDelete(id);
+      return !!result;
+    } catch (error) {
+      console.error('Error deleting time block:', error);
+      return false;
+    }
   }
 
-  // DailyPlan methods
-  async getDailyPlan(userId: number, date: Date): Promise<DailyPlan | undefined> {
-    // Set hours, minutes, seconds, and milliseconds to 0 to match just the date
-    const targetDate = new Date(date);
-    targetDate.setHours(0, 0, 0, 0);
-    
-    return Array.from(this.dailyPlans.values()).find(plan => {
-      const planDate = new Date(plan.date);
-      planDate.setHours(0, 0, 0, 0);
-      return plan.userId === userId && planDate.getTime() === targetDate.getTime();
-    });
+  // ==================== DailyPlan Methods ====================
+  
+  /**
+   * Get a daily plan for a specific user and date
+   * @param userId - The user's ID
+   * @param date - The date to find the plan for
+   */
+  async getDailyPlan(userId: string, date: Date): Promise<IDailyPlan | undefined> {
+    try {
+      // Create a date range for the specific day (start and end of the day)
+      const startOfDay = new Date(date);
+      startOfDay.setHours(0, 0, 0, 0);
+      
+      const endOfDay = new Date(date);
+      endOfDay.setHours(23, 59, 59, 999);
+      
+      const dailyPlan = await DailyPlan.findOne({
+        userId: new Types.ObjectId(userId),
+        date: {
+          $gte: startOfDay,
+          $lte: endOfDay
+        }
+      });
+      
+      return dailyPlan || undefined;
+    } catch (error) {
+      console.error('Error getting daily plan:', error);
+      return undefined;
+    }
   }
 
-  async createDailyPlan(insertDailyPlan: InsertDailyPlan): Promise<DailyPlan> {
-    const id = this.dailyPlanIdCounter++;
-    const now = new Date();
-    const dailyPlan: DailyPlan = { ...insertDailyPlan, id, createdAt: now };
-    this.dailyPlans.set(id, dailyPlan);
-    return dailyPlan;
+  /**
+   * Create a new daily plan in the database
+   * @param dailyPlanData - The daily plan data to insert
+   */
+  async createDailyPlan(dailyPlanData: InsertDailyPlan): Promise<IDailyPlan> {
+    try {
+      // Convert string IDs to ObjectIds
+      const dailyPlan = new DailyPlan({
+        ...dailyPlanData,
+        userId: new Types.ObjectId(dailyPlanData.userId),
+        taskIds: Array.isArray(dailyPlanData.taskIds) 
+          ? dailyPlanData.taskIds.map(id => new Types.ObjectId(id)) 
+          : [],
+        timeBlockIds: Array.isArray(dailyPlanData.timeBlockIds)
+          ? dailyPlanData.timeBlockIds.map(id => new Types.ObjectId(id))
+          : []
+      });
+      
+      await dailyPlan.save();
+      return dailyPlan;
+    } catch (error) {
+      console.error('Error creating daily plan:', error);
+      throw error;
+    }
   }
 
-  async updateDailyPlan(id: number, dailyPlanUpdate: Partial<DailyPlan>): Promise<DailyPlan | undefined> {
-    const dailyPlan = this.dailyPlans.get(id);
-    if (!dailyPlan) return undefined;
-    
-    const updatedDailyPlan = { ...dailyPlan, ...dailyPlanUpdate };
-    this.dailyPlans.set(id, updatedDailyPlan);
-    return updatedDailyPlan;
+  /**
+   * Update an existing daily plan
+   * @param id - The daily plan ID to update
+   * @param dailyPlanUpdate - The updated daily plan data
+   */
+  async updateDailyPlan(id: string, dailyPlanUpdate: Partial<IDailyPlan>): Promise<IDailyPlan | undefined> {
+    try {
+      // Handle array of ObjectIds
+      if (dailyPlanUpdate.taskIds && Array.isArray(dailyPlanUpdate.taskIds)) {
+        dailyPlanUpdate.taskIds = dailyPlanUpdate.taskIds.map(id => 
+          typeof id === 'string' ? new Types.ObjectId(id) : id
+        );
+      }
+      
+      if (dailyPlanUpdate.timeBlockIds && Array.isArray(dailyPlanUpdate.timeBlockIds)) {
+        dailyPlanUpdate.timeBlockIds = dailyPlanUpdate.timeBlockIds.map(id => 
+          typeof id === 'string' ? new Types.ObjectId(id) : id
+        );
+      }
+      
+      const dailyPlan = await DailyPlan.findByIdAndUpdate(
+        id,
+        { $set: dailyPlanUpdate },
+        { new: true }
+      );
+      
+      return dailyPlan || undefined;
+    } catch (error) {
+      console.error('Error updating daily plan:', error);
+      return undefined;
+    }
   }
 
-  // Integration methods
-  async getIntegration(userId: number, type: string): Promise<Integration | undefined> {
-    return Array.from(this.integrations.values()).find(
-      (integration) => integration.userId === userId && integration.type === type
-    );
+  // ==================== Integration Methods ====================
+  
+  /**
+   * Get an integration by user ID and type
+   * @param userId - The user's ID
+   * @param type - The integration type
+   */
+  async getIntegration(userId: string, type: string): Promise<IIntegration | undefined> {
+    try {
+      const integration = await Integration.findOne({
+        userId: new Types.ObjectId(userId),
+        type
+      });
+      
+      return integration || undefined;
+    } catch (error) {
+      console.error('Error getting integration:', error);
+      return undefined;
+    }
   }
 
-  async createIntegration(insertIntegration: InsertIntegration): Promise<Integration> {
-    const id = this.integrationIdCounter++;
-    const now = new Date();
-    const integration: Integration = { 
-      ...insertIntegration, 
-      id,
-      syncStatus: "inactive",
-      lastSynced: null,
-      createdAt: now
-    };
-    this.integrations.set(id, integration);
-    return integration;
+  /**
+   * Create a new integration in the database
+   * @param integrationData - The integration data to insert
+   */
+  async createIntegration(integrationData: InsertIntegration): Promise<IIntegration> {
+    try {
+      const integration = new Integration({
+        ...integrationData,
+        userId: new Types.ObjectId(integrationData.userId)
+      });
+      
+      await integration.save();
+      return integration;
+    } catch (error) {
+      console.error('Error creating integration:', error);
+      throw error;
+    }
   }
 
-  async updateIntegration(id: number, integrationUpdate: Partial<Integration>): Promise<Integration | undefined> {
-    const integration = this.integrations.get(id);
-    if (!integration) return undefined;
-    
-    const updatedIntegration = { ...integration, ...integrationUpdate };
-    this.integrations.set(id, updatedIntegration);
-    return updatedIntegration;
+  /**
+   * Update an existing integration
+   * @param id - The integration ID to update
+   * @param integrationUpdate - The updated integration data
+   */
+  async updateIntegration(id: string, integrationUpdate: Partial<IIntegration>): Promise<IIntegration | undefined> {
+    try {
+      const integration = await Integration.findByIdAndUpdate(
+        id,
+        { $set: integrationUpdate },
+        { new: true }
+      );
+      
+      return integration || undefined;
+    } catch (error) {
+      console.error('Error updating integration:', error);
+      return undefined;
+    }
   }
 
-  async deleteIntegration(id: number): Promise<boolean> {
-    return this.integrations.delete(id);
+  /**
+   * Delete an integration from the database
+   * @param id - The integration ID to delete
+   */
+  async deleteIntegration(id: string): Promise<boolean> {
+    try {
+      const result = await Integration.findByIdAndDelete(id);
+      return !!result;
+    } catch (error) {
+      console.error('Error deleting integration:', error);
+      return false;
+    }
   }
 }
 
-export const storage = new MemStorage();
+// Create and export a storage instance
+export const storage = new MongoStorage();
